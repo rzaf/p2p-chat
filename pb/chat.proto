@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package chatPb;
+option go_package="./pb";
+
+
+message Empty {}
+
+message Text {
+    bytes   Message     = 1;
+    int64   UnixMilli   = 2;
+    string  RoomUuid    = 3;
+    string  UserUuid    = 4;
+    string  Username    = 5;
+}
+
+
+service ChatService{
+    rpc Message(Text) returns (Empty){};
+}
+
