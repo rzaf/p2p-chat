@@ -3,12 +3,12 @@ package room
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/rzaf/p2p-chat/gui/config"
 	"github.com/rzaf/p2p-chat/gui/message"
 	"github.com/rzaf/p2p-chat/models"
 	"github.com/rzaf/p2p-chat/pb"
-	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -19,10 +19,18 @@ import (
 	"golang.org/x/crypto/nacl/secretbox"
 )
 
+type Peer struct {
+	Ip       string
+	Port     string
+	Username string
+}
+
 type Room struct {
 	Secret            []byte
 	Uuid              string
 	UserId            string
+	IsPublic          bool
+	Peers             []*Peer // for public rooms
 	Name              string
 	Addr              string
 	Port              string
@@ -44,8 +52,14 @@ func AddRoom(r2 *models.Room) *Room {
 		Addr:      r2.Addr,
 		Port:      r2.Port,
 		Id:        r2.Id,
+		IsPublic:  false,
+		Peers:     make([]*Peer, 0),
 		seperator: widget.NewSeparator(),
 	}
+	if r.UserId == "" {
+		r.IsPublic = true
+	}
+	// r.Peers = append(r.Peers, &Peer{Ip: r.Addr, Port: r.Port})
 	r.createContainer()
 	r.createChatRoom()
 	r.add()
@@ -124,6 +138,11 @@ func (r *Room) createContainer() {
 		}
 		secretItem := widget.NewFormItem("secret:", secretEntry)
 
+		isPublicEntry := widget.NewCheck("", func(b bool) {})
+		isPublicEntry.Checked = r.IsPublic
+		isPublicEntry.Disable()
+		isPublicItem := widget.NewFormItem("is public:", isPublicEntry)
+
 		userIdEntry := widget.NewEntry()
 		userIdEntry.Text = r.UserId
 		userIdEntry.Validator = func(s string) error {
@@ -138,7 +157,10 @@ func (r *Room) createContainer() {
 		infoRoomLabel := widget.NewLabel(r.Name + " Info")
 		infoRoomLabel.Alignment = fyne.TextAlignCenter
 		infoRoomLabel.TextStyle.Bold = true
-		infoRoomForm := widget.NewForm(addressItem, portItem, uuidItem, secretItem, userIdItem)
+		infoRoomForm := widget.NewForm(addressItem, portItem, uuidItem, secretItem, isPublicItem)
+		if !isPublicEntry.Checked {
+			infoRoomForm.AppendItem(userIdItem)
+		}
 
 		infoRoomsContainer := container.NewBorder(
 			infoRoomLabel,
@@ -198,26 +220,7 @@ func (r *Room) createChatRoom() {
 			r.Messages = append(r.Messages, m)
 			r.MessageList.Add(m.Container)
 			r.MessageListScroll.ScrollToBottom()
-			go func(secret []byte, roomUuid, text, addr string) {
-				attempts := 0
-				for {
-					if attempts > 3 {
-						m.Tick1.SetResource(theme.ErrorIcon())
-						m.Tick1.Show()
-						return
-					}
-					attempts++
-					err := config.SendMessageTo(secret, roomUuid, config.UserUuid, text, addr, config.Username)
-					if err != nil {
-						fmt.Println(err)
-						// ShowError(err)
-						time.Sleep(time.Second * 2)
-						continue
-					}
-					m.Tick1.Show()
-					return
-				}
-			}(r.Secret, r.Uuid, input.Text, r.Addr+":"+r.Port)
+			go sendMessage(r, m, input.Text)
 
 			input.Text = ""
 			input.Refresh()
@@ -238,11 +241,44 @@ func (r *Room) createChatRoom() {
 	r.ChatRoom = container.NewBorder(top, nil, nil, nil, center)
 }
 
-func AddMessage(t *pb.Text) {
-	fmt.Println(t)
+func sendMessage(r *Room, m *message.Message, t string) {
+	// addr := r.Addr + ":" + r.Port
+
+	if r.IsPublic {
+		// sending messages to other users in the room
+		for _, a := range r.Peers {
+			if a.Ip == r.Addr && a.Port == r.Port {
+				continue
+			}
+			config.SendMessageTo(r.Secret, r.Uuid, "", t, a.Ip, a.Port, config.Username)
+		}
+	}
+	attempts := 0
+	for {
+		if attempts > 3 {
+			m.Tick1.SetResource(theme.ErrorIcon())
+			m.Tick1.Show()
+			return
+		}
+		attempts++
+		err := config.SendMessageTo(r.Secret, r.Uuid, config.UserUuid, t, r.Addr, r.Port, config.Username)
+		if err != nil {
+			fmt.Println(err)
+			// ShowError(err)
+			time.Sleep(time.Second * 2)
+			continue
+		}
+		m.Tick1.Show()
+		return
+	}
+}
+
+func AddMessage(t *pb.Text, ip, port string) {
+	addr := ip + ":" + port
+	fmt.Println(t, addr)
 	for _, r := range Rooms {
-		fmt.Println(r)
-		if r.Uuid == t.RoomUuid && r.UserId == t.UserUuid {
+		fmt.Printf("ip:%v,room ip:%v \n", addr, r.Addr+":"+r.Port)
+		if r.Uuid == t.RoomUuid && (r.IsPublic == true || r.UserId == t.UserUuid) {
 			encrypted := t.Message
 			var decryptNonce [24]byte
 			copy(decryptNonce[:], encrypted[:24])
@@ -259,6 +295,25 @@ func AddMessage(t *pb.Text) {
 				r.Messages = append(r.Messages, m)
 				r.MessageList.Add(m.Container)
 				r.MessageListScroll.ScrollToBottom()
+			}
+			if r.IsPublic {
+				// sending recieved messages to other users in the room
+				f := false
+				for i, a := range r.Peers {
+					fmt.Printf("peer %d:%v\n", i, a)
+					if a.Ip == ip && a.Port == port {
+						f = true
+						a.Username = t.Username
+						continue
+					}
+					config.SendMessageTo(r.Secret, t.RoomUuid, "", string(decrypted), a.Ip, a.Port, t.Username)
+				}
+				if !f {
+					r.Peers = append(r.Peers, &Peer{Ip: ip, Port: port, Username: t.Username})
+					if r.Addr != ip && r.Port != port {
+						config.SendMessageTo(r.Secret, t.RoomUuid, "", string(decrypted), ip, port, t.Username)
+					}
+				}
 			}
 			return
 		}

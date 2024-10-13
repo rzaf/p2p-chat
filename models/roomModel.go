@@ -27,7 +27,8 @@ func MigrateRooms() error {
 		Addr varchar(128) not null,
 		Port varchar(128) not null,
 		Secrete varchar(128) not null,
-		Uuid varchar(128) not null
+		Uuid varchar(128) not null,
+		UserUuid varchar(128) not null
 	);
 	`
 	_, err := Db.Exec(query)
@@ -39,9 +40,9 @@ func InsertRoom(r Room) (*Room, error) {
 		r.Id = rand.Int63()
 		return &r, nil
 	}
-	s := "insert into rooms (Name,Addr,Port,Secrete,Uuid) values (?,?,?,?,?);"
+	s := "insert into rooms (Name,Addr,Port,Secrete,Uuid,UserUuid) values (?,?,?,?,?,?);"
 
-	res, err := Db.Exec(s, r.Name, r.Addr, r.Port, r.Secrete, r.Uuid)
+	res, err := Db.Exec(s, r.Name, r.Addr, r.Port, r.Secrete, r.Uuid, r.UserUuid)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +69,7 @@ func GetAllRooms() ([]*Room, error) {
 	var AllRooms []*Room
 	for rows.Next() {
 		var r Room
-		err2 := rows.Scan(&r.Id, &r.Name, &r.Addr, &r.Port, &r.Secrete, &r.Uuid)
+		err2 := rows.Scan(&r.Id, &r.Name, &r.Addr, &r.Port, &r.Secrete, &r.Uuid, &r.UserUuid)
 		if err2 != nil {
 			return nil, err2
 		}
@@ -81,14 +82,14 @@ func GetRoomById(id int64) (*Room, error) {
 	if Db == nil {
 		return nil, nil
 	}
-	s := "select (Name,Addr,Port,Secrete,Uuid) from rooms WHERE id=?;"
+	s := "select (Name,Addr,Port,Secrete,Uuid,UserUuid) from rooms WHERE id=?;"
 
 	row := Db.QueryRow(s, id)
 	if row == nil {
 		return nil, errors.New("not found")
 	}
 	var r Room
-	err := row.Scan(&r.Id, &r.Name, &r.Addr, &r.Port, &r.Secrete, &r.Uuid)
+	err := row.Scan(&r.Id, &r.Name, &r.Addr, &r.Port, &r.Secrete, &r.Uuid, &r.UserUuid)
 	if err != nil {
 		return nil, err
 	}
@@ -99,9 +100,9 @@ func UpdateRoom(id int64, updated Room) error {
 	if Db == nil {
 		return nil
 	}
-	s := "update rooms set Name=?,Addr=?,Port=?,Secrete=?,Uuid=? WHERE id=?;"
+	s := "update rooms set Name=?,Addr=?,Port=?,Secrete=?,Uuid=?,UserUuid=? WHERE id=?;"
 
-	r, err := Db.Exec(s, updated.Name, updated.Addr, updated.Port, updated.Secrete, updated.Uuid, id)
+	r, err := Db.Exec(s, updated.Name, updated.Addr, updated.Port, updated.Secrete, updated.Uuid, updated.UserUuid, id)
 	if err != nil {
 		return err
 	}

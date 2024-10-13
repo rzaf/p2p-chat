@@ -22,12 +22,12 @@ A serverless p2p chat app written in go with [***fyne***](https://github.com/fyn
 
 ## usage
 
-- each rooms can only send messages to rooms that have same `uuid`,`secret` and their `ip`,`port`,`user uuid`
+- each rooms can only send messages to rooms that have same `uuid`,`secret` and have each others `ip`,`port`,`user uuid`
 - each user has a public username that can be changed in seting
 
 ## features
 
-- private chat rooms
+- private and public chat rooms
 - serverless app
 - encrypted messaging
 - light/dark mode
@@ -35,8 +35,7 @@ A serverless p2p chat app written in go with [***fyne***](https://github.com/fyn
 
 ## todos
 
-- public chat rooms
 - storing caht messages
-- norifying seen messages
+- notifying seen messages
 - profile photo
 - sending media messages (photo,video,music)

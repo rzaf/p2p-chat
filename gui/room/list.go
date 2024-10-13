@@ -33,7 +33,11 @@ func LoadRooms() {
 		return
 	}
 	fmt.Println("loading rooms")
-	rooms, _ := models.GetAllRooms()
+	rooms, err := models.GetAllRooms()
+	if err != nil {
+		println("failed to get rooms")
+		fmt.Printf("error:%v\n", err)
+	}
 	fmt.Println("rooms:", rooms)
 	for _, r := range rooms {
 		AddRoom(r)
@@ -48,19 +52,30 @@ func NewRoom(name, addr, port, userUuid string) *Room {
 		Name:      name,
 		Addr:      addr,
 		Port:      port,
+		IsPublic:  false,
+		Peers:     make([]*Peer, 0),
 		seperator: widget.NewSeparator(),
 	}
+	if userUuid == "" {
+		r.IsPublic = true
+	}
+	// r.Peers = append(r.Peers, &Peer{Ip: r.Addr, Port: r.Port})
 	r.createContainer()
 	r.createChatRoom()
 	r.add()
 	if config.SaveRooms {
 		newRoom, err := models.InsertRoom(models.Room{
-			Secrete: string(r.Secret),
-			Uuid:    r.Uuid,
-			Name:    r.Name,
-			Addr:    r.Addr,
-			Port:    r.Port,
+			Secrete:  string(r.Secret),
+			Uuid:     r.Uuid,
+			Name:     r.Name,
+			Addr:     r.Addr,
+			Port:     r.Port,
+			UserUuid: r.UserId,
 		})
+		if err != nil {
+			println("failed to insert room")
+			fmt.Printf("error:%v\n", err)
+		}
 		if err == nil {
 			r.Id = newRoom.Id
 		}
@@ -104,8 +119,16 @@ func makeAddRoomToolbarAction() *widget.ToolbarAction {
 	addRoomPortInput.Validator = config.PortValidator()
 	addRoomPortForm := widget.NewFormItem("port:", addRoomPortInput)
 
+	var isPublicCheckBox *widget.Check
+
 	addRoomUserIdInput := widget.NewEntry()
 	addRoomUserIdInput.Validator = func(s string) error {
+		if isPublicCheckBox.Checked { // when room is public
+			addRoomUserIdInput.Text = ""
+			return nil
+		}
+		s = strings.TrimSpace(s)
+		addRoomUserIdInput.Text = s
 		if s == "" {
 			return fmt.Errorf("empty")
 		}
@@ -114,11 +137,26 @@ func makeAddRoomToolbarAction() *widget.ToolbarAction {
 	addRoomUserIdForm := widget.NewFormItem("user id:", addRoomUserIdInput)
 	addRoomUserIdForm.HintText = "user uuid of person that can send messages in this room"
 
+	var addRoomForm *widget.Form
+	isPublicCheckBox = widget.NewCheck("", func(b bool) {
+		if b {
+			addRoomUserIdInput.Disable()
+			addRoomForm.Items[len(addRoomForm.Items)-1] = nil
+			addRoomForm.Items = addRoomForm.Items[:len(addRoomForm.Items)-1]
+			addRoomForm.Refresh()
+		} else {
+			addRoomUserIdInput.Enable()
+			addRoomForm.AppendItem(addRoomUserIdForm)
+			addRoomForm.Refresh()
+		}
+	})
+	isPublicForm := widget.NewFormItem("is public:", isPublicCheckBox)
+
 	addRoomLabel := widget.NewLabel("Add Room")
 	addRoomLabel.TextStyle.Bold = true
 	addRoomLabel.Alignment = fyne.TextAlignCenter
 
-	addRoomForm := widget.NewForm(addRoomNameForm, addRoomIpForm, addRoomPortForm, addRoomUserIdForm)
+	addRoomForm = widget.NewForm(addRoomNameForm, addRoomIpForm, addRoomPortForm, isPublicForm, addRoomUserIdForm)
 
 	addRoomContainer = container.NewBorder(
 		addRoomLabel,
